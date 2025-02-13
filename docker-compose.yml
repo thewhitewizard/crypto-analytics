@@ -1,0 +1,9 @@
+services:
+  crypto-analytics:
+    container_name:  crypto-analytics
+    image:  crypto-analytics
+    restart: always
+    volumes:
+      - ./data:/data
+      - ./.env:/app/.env
+

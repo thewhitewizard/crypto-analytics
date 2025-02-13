@@ -1,0 +1,6 @@
+crypto-analytics
+crypto-analytics.db
+.env
+ crypto-analytics.db-journal
+*.sql
+bin/
