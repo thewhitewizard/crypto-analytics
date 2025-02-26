@@ -3,6 +3,7 @@ package application
 import (
 	cmcService "crypto-analytics/services/coinmarketcap"
 	"crypto-analytics/services/health"
+	telegramService "crypto-analytics/services/telegram"
 	"crypto-analytics/services/twitter"
 	databases "crypto-analytics/utils/databases"
 	"crypto-analytics/utils/insights"
@@ -18,7 +19,8 @@ type Application interface {
 type Impl struct {
 	scheduler            gocron.Scheduler
 	healthService        health.Service
-	coinmarketcapServoce cmcService.Service
+	coinmarketcapService cmcService.Service
+	telegramService      telegramService.Service
 	twitterService       twitter.Service
 	db                   databases.SqlConnection
 	probes               insights.Probes

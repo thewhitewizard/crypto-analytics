@@ -19,3 +19,10 @@ func (repo *Impl) Count() int64 {
 
 	return *count
 }
+
+func (repo *Impl) FetchForSymbolYesterday(symbol string, day string) (entities.Historical, error) {
+	var existingHistorical entities.Historical
+	result := repo.db.GetDB().Where("symbol = ?", symbol).Where("day = ?", day).First(&existingHistorical)
+
+	return existingHistorical, result.Error
+}

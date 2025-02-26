@@ -1,4 +1,4 @@
-package trending
+package telegram
 
 import (
 	"crypto-analytics/models/entities"
@@ -6,9 +6,9 @@ import (
 )
 
 type Repository interface {
-	Save(crypto entities.TrendingCrypto) error
-	Count() int64
-	IsCryptoTrendyAtDay(symbol string, day string) (entities.TrendingCrypto, error)
+	SaveOrUpdate(user entities.TelegramUser) error
+	Delete(user entities.TelegramUser) error
+	FetchAll() ([]entities.TelegramUser, error)
 }
 
 type Impl struct {

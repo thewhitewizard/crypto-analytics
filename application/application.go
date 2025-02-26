@@ -3,11 +3,14 @@ package application
 import (
 	"crypto-analytics/models/constants"
 	"crypto-analytics/models/entities"
+	communityRepo "crypto-analytics/repositories/community"
 	historicalRepo "crypto-analytics/repositories/historical"
+	telegramRepo "crypto-analytics/repositories/telegram"
 	trendingRepo "crypto-analytics/repositories/trending"
 	twitterRepo "crypto-analytics/repositories/twitter"
 	"crypto-analytics/services/coinmarketcap"
-	"crypto-analytics/services/health"
+	"crypto-analytics/services/telegram"
+
 	"crypto-analytics/services/twitter"
 	databases "crypto-analytics/utils/databases"
 	"crypto-analytics/utils/insights"
@@ -15,6 +18,7 @@ import (
 
 	"github.com/go-co-op/gocron/v2"
 	"github.com/rs/zerolog/log"
+	"github.com/spf13/viper"
 )
 
 func New() (*Impl, error) {
@@ -23,7 +27,7 @@ func New() (*Impl, error) {
 		return nil, errDB
 	}
 
-	errMigration := db.GetDB().AutoMigrate(&entities.Historical{}, &entities.TrendingCrypto{}, &entities.Tweet{})
+	errMigration := db.GetDB().AutoMigrate(&entities.CommunityData{}, &entities.TelegramUser{}, &entities.Historical{}, &entities.TrendingCrypto{}, &entities.Tweet{})
 	if errMigration != nil {
 		return nil, errMigration
 	}
@@ -43,31 +47,37 @@ func New() (*Impl, error) {
 	histoRepo := historicalRepo.New(db)
 	trendRepo := trendingRepo.New(db)
 	twitterRepo := twitterRepo.New(db)
+	telegramRepo := telegramRepo.New(db)
+	communityRepo := communityRepo.New(db)
 
 	twitterService, errTwitter := twitter.New(scheduler, twitterRepo, constants.GetTwitterAccounts())
 	if errTwitter != nil {
 		return nil, errTwitter
 	}
-	coinmarketcapService, errCMC := coinmarketcap.New(scheduler, trendRepo, histoRepo)
+	coinmarketcapService, errCMC := coinmarketcap.New(scheduler, trendRepo, histoRepo, communityRepo)
 	if errCMC != nil {
 		return nil, errCMC
 	}
-	healthService, errHealthService := health.New(scheduler)
-	if errHealthService != nil {
-		return nil, errHealthService
+
+	telegramService, errTg := telegram.New(scheduler, viper.GetString(constants.TelegramBotToken), telegramRepo, coinmarketcapService)
+	if errTg != nil {
+		return nil, errTg
 	}
+
+	coinmarketcapService.RegisterObserver(telegramService)
 
 	return &Impl{
 		scheduler:            scheduler,
-		healthService:        healthService,
 		probes:               probes,
-		coinmarketcapServoce: coinmarketcapService,
+		coinmarketcapService: coinmarketcapService,
+		telegramService:      telegramService,
 		twitterService:       twitterService,
 	}, nil
 }
 
 func (app *Impl) Run() {
 	app.scheduler.Start()
+	go app.telegramService.ListenAndDispatch()
 	for _, job := range app.scheduler.Jobs() {
 		scheduledTime, err := job.NextRun()
 		if err == nil {

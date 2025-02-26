@@ -62,12 +62,14 @@ func (service *Impl) checkTwitterAccount(account constants.TwitterAccount) {
 		Msgf("Reading tweets...")
 
 	tweets, _, err := service.scraper.FetchTweets(account.Name, service.tweetCount, "")
+
 	if err != nil {
 		log.Error().Err(err).
 			Str(constants.LogTwitterID, account.ID).
 			Msgf("Cannot retrieve tweets from account, ignored")
 		return
 	}
+
 	tweets = service.keepInterestingTweets(tweets)
 
 	for _, tweet := range tweets {

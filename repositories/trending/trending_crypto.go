@@ -19,3 +19,10 @@ func (repo *Impl) Count() int64 {
 
 	return *count
 }
+
+func (repo *Impl) IsCryptoTrendyAtDay(symbol string, day string) (entities.TrendingCrypto, error) {
+	var existingTrendingCrypto entities.TrendingCrypto
+	result := repo.db.GetDB().Where("symbol = ?", symbol).Where("day = ?", day).First(&existingTrendingCrypto)
+
+	return existingTrendingCrypto, result.Error
+}

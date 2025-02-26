@@ -5,6 +5,9 @@ import "github.com/rs/zerolog"
 const (
 	ConfigFileName = ".env"
 
+	// TELEGRAM BOT
+	TelegramBotToken = "TELEGRAM_BOT_TOKEN"
+
 	//nolint:gosec // False positive.
 	// Auth token used when logged in to Twitter.
 	TwitterAuthToken = "TWITTER_AUTH_TOKEN"
@@ -37,6 +40,7 @@ const (
 	// Cron tab to historical.
 	HistoricalCryptoCronTab = "HISTORICAL_CRYPTO_CRON_TAB"
 
+	defaultTelegramBotToken         = ""
 	defaultTwitterAuthToken         = ""
 	defaultTwitterCSRFToken         = ""
 	defaultTwitterTweetCount        = 20
@@ -61,5 +65,6 @@ func GetDefaultConfigValues() map[string]any {
 		HealthCronTab:           defaultHealthCrontab,
 		TrendingCryptoCronTab:   defaultTrendingCryptoCrontTab,
 		HistoricalCryptoCronTab: defaultHistoricalCryptoCrontTab,
+		TelegramBotToken:        defaultTelegramBotToken,
 	}
 }

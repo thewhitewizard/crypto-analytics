@@ -2,6 +2,10 @@ package dates
 
 import "time"
 
+const (
+	DateFormat = "2006-01-02"
+)
+
 func GenerateDatesBetween2Dates(from string, to string, dateFormat string) []string {
 	start, _ := time.Parse(dateFormat, from)
 	end, err := time.Parse(dateFormat, to)

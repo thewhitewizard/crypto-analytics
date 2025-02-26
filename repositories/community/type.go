@@ -1,4 +1,4 @@
-package trending
+package community
 
 import (
 	"crypto-analytics/models/entities"
@@ -6,9 +6,9 @@ import (
 )
 
 type Repository interface {
-	Save(crypto entities.TrendingCrypto) error
+	Save(crypto entities.CommunityData) error
+	FetchForSymbolYesterday(id int, day string) (entities.CommunityData, error)
 	Count() int64
-	IsCryptoTrendyAtDay(symbol string, day string) (entities.TrendingCrypto, error)
 }
 
 type Impl struct {
