@@ -27,12 +27,23 @@ func (repo *Impl) SaveOrUpdate(tweet entities.Tweet) error {
 			return fmt.Errorf("failed to check tweet existence: %w", result.Error)
 		}
 	} else {
+		tweet.Timestamp = existingTweet.Timestamp // To check if necessary
 		if err := repo.db.GetDB().Model(&existingTweet).Updates(tweet).Error; err != nil {
 			return fmt.Errorf("failed to update tweet: %w", err)
 		}
 	}
 
 	return nil
+}
+
+func (repo *Impl) GetTweetBetweenTimestamps(startTimestamp int64, endTimestamp int64) ([]entities.Tweet, error) {
+	var tweets []entities.Tweet
+
+	res := repo.db.GetDB().Find(&tweets).
+		Where("timestamp > ?", startTimestamp).
+		Where("timestamp < ?", endTimestamp)
+
+	return tweets, res.Error
 }
 
 func (repo *Impl) Count() int64 {

@@ -5,20 +5,26 @@ import (
 	"crypto-analytics/models/entities"
 	"crypto-analytics/pkg/observer"
 	telegramRepo "crypto-analytics/repositories/telegram"
+	"math"
+
+	//geckoService "crypto-analytics/services/coingecko"
 	cmcService "crypto-analytics/services/coinmarketcap"
+	twitterService "crypto-analytics/services/twitter"
 	"crypto-analytics/utils/dates"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/PaulSonOfLars/gotgbot/v2"
 	"github.com/PaulSonOfLars/gotgbot/v2/ext"
 	"github.com/PaulSonOfLars/gotgbot/v2/ext/handlers"
+	"github.com/dustin/go-humanize"
 	"github.com/go-co-op/gocron/v2"
 	"github.com/patrickmn/go-cache"
 	"github.com/rs/zerolog/log"
 )
 
-func New(scheduler gocron.Scheduler, token string, telegramRepo telegramRepo.Repository, cmcService cmcService.Service) (*Impl, error) {
+func New(scheduler gocron.Scheduler, token string, telegramRepo telegramRepo.Repository, cmcService cmcService.Service, twitterService twitterService.Service) (*Impl, error) {
 
 	if token == "" {
 		return &Impl{}, ErrTokenIsMissing
@@ -37,13 +43,15 @@ func New(scheduler gocron.Scheduler, token string, telegramRepo telegramRepo.Rep
 		MaxRoutines: ext.DefaultMaxRoutines,
 	})
 
-	service := Impl{bot: b, telegramRepo: telegramRepo, cmcService: cmcService, cache: cache.New(1*time.Hour, 2*time.Hour)}
+	service := Impl{bot: b, telegramRepo: telegramRepo, cmcService: cmcService, twitterService: twitterService, cache: cache.New(1*time.Hour, 2*time.Hour)}
 	dispatcher.AddHandler(handlers.NewCommand("start", service.startCmd))
 	dispatcher.AddHandler(handlers.NewCommand("help", service.helpCmd))
 	dispatcher.AddHandler(handlers.NewCommand("report", service.reportCmd))
 	dispatcher.AddHandler(handlers.NewCommand("subscribe", service.subscribeCmd))
 	dispatcher.AddHandler(handlers.NewCommand("unsubscribe", service.unsubscribeCmd))
 	dispatcher.AddHandler(handlers.NewCommand("maintenance", service.maintenanceCmd))
+	dispatcher.AddHandler(handlers.NewCommand("banner", service.adminMessageCmd))
+	dispatcher.AddHandler(handlers.NewCommand("tokens", service.tokenInfoCmd))
 	dispatcher.AddHandler(handlers.NewCommand("", service.unknownCmd))
 
 	service.updater = ext.NewUpdater(dispatcher, nil)
@@ -86,6 +94,7 @@ func New(scheduler gocron.Scheduler, token string, telegramRepo telegramRepo.Rep
 		}
 	**/
 	service.generateReport()
+	service.sendDailyReport(constants.TelegramAdmin)
 	return &service, nil
 }
 
@@ -107,6 +116,104 @@ func (service *Impl) ListenAndDispatch() error {
 	service.updater.Idle()
 
 	time.Sleep(1 * time.Hour)
+	return nil
+}
+
+func (service *Impl) adminMessageCmd(b *gotgbot.Bot, ctx *ext.Context) error {
+
+	if ctx.EffectiveChat.Id != constants.TelegramAdmin {
+		log.Warn().Str("cmd", "admin_message").Int64("chatID", ctx.EffectiveChat.Id).Msg("forbidden usage")
+		return nil
+	}
+	adminMessage := strings.Join(strings.Fields(ctx.Message.GetText())[1:], " ")
+
+	msg := "📢 *Dev Communication* \n\n"
+	msg += adminMessage + "\n\n"
+	msg += "Stay tuned for more updates! \n\n"
+
+	users, err := service.telegramRepo.FetchAll()
+
+	if err == nil {
+		for _, user := range users {
+			log.Info().Str("cmd", "admin_message").Int64("chatID", user.ChatID).Msg("send global message")
+			service.bot.SendMessage(user.ChatID, msg, &gotgbot.SendMessageOpts{ParseMode: "Markdown"})
+		}
+	}
+
+	return nil
+}
+
+func (service *Impl) tokenInfoCmd(b *gotgbot.Bot, ctx *ext.Context) error {
+
+	if !service.isASubscriber(ctx.EffectiveChat.Id) {
+		msg := "⚠️ This feature is only available for subscribers !\n"
+		service.bot.SendMessage(ctx.EffectiveChat.Id, msg, &gotgbot.SendMessageOpts{ParseMode: "Markdown"})
+	}
+
+	tokensAsString := strings.Join(strings.Fields(ctx.Message.GetText())[1:], " ")
+	if len(tokensAsString) > 0 {
+		tokens := strings.Split(strings.ToUpper(tokensAsString), " ")
+		msg := "📢 *Tokens Info* 🚀\n\n"
+		ok := false
+		limit := 5
+		for idx, t := range tokens {
+			if idx == limit {
+				break
+			}
+			histo, errPrice := service.cmcService.FetchForSymbolYesterday(t)
+			if errPrice == nil {
+				histo7DaysAgo, errPrice7Days := service.cmcService.FetchForSymbol7DaysAgo(t)
+				trendy := service.cmcService.IsCryptoTrendyYersterday(t)
+
+				msg += "🔹 *" + histo.Name + "*\n"
+
+				ok = true
+				msg += fmt.Sprintf("💰 Price: `$%.2f`\n", histo.Price)
+				if errPrice7Days == nil {
+					percent := ((histo.Price - histo7DaysAgo.Price) / histo7DaysAgo.Price) * 100
+					if percent < 0 {
+						msg += fmt.Sprintf("📉 7 days : `%.2f%%`\n", percent)
+					} else {
+						msg += fmt.Sprintf("📈 7 days : `%.2f%%`\n", percent)
+					}
+
+				}
+				msg += fmt.Sprintf("📊 Rank: `#%d`\n", histo.Rank)
+				//msg += fmt.Sprintf("🏛 Market Cap: `$%.2f`\n", histo.Marketcap)
+				msg += fmt.Sprintf("🏛 Market Cap: `$%s`\n", humanize.CommafWithDigits(histo.Marketcap, 2))
+
+				if trendy {
+					msg += fmt.Sprintf("🔥 Trending: *%s*\n\n", "Yes! 🚀")
+				} else {
+					msg += fmt.Sprintf("🔥 Trending: *%s*\n\n", "No ❄️")
+				}
+
+				//degeu
+				if histo.Symbol == "RLC" {
+					tweets, errTweets := service.twitterService.GetYesterdayTweets()
+					if errTweets == nil && len(tweets) > 0 {
+						msg += "🔥 *Twitter Highlights from Yesterday*\n\n"
+						for _, tweet := range tweets {
+							msg += "🔗 [Tweet Link](" + tweet.PermanentURL + ")\n"
+						}
+
+					} else {
+						msg += "No Twitter activity yesterday.\n"
+					}
+				}
+
+				msg += "\n"
+
+			}
+
+		}
+		if ok {
+			msg += "\n"
+			msg += "📆 Data from *yesterday*. Stay tuned for more updates! 📈\n\n"
+			msg += "⚠️ The report is based on yesterday's data, so 7-day data actually means today minus 8 days.\n"
+			service.bot.SendMessage(ctx.EffectiveChat.Id, msg, &gotgbot.SendMessageOpts{ParseMode: "Markdown"})
+		}
+	}
 	return nil
 }
 
@@ -158,7 +265,7 @@ func (service *Impl) subscribeCmd(b *gotgbot.Bot, ctx *ext.Context) error {
 	log.Info().Str("cmd", "subscribe").Str("username", ctx.EffectiveChat.Username).Int64("chatID", ctx.EffectiveChat.Id).Msg("command received")
 	err := service.telegramRepo.SaveOrUpdate(entities.TelegramUser{ChatID: ctx.EffectiveChat.Id, Name: ctx.EffectiveChat.Username})
 	if err != nil {
-		log.Error().Err(err).Str("username", ctx.EffectiveChat.Username).Int64("chatID", ctx.EffectiveChat.Id).Msg("error on saved")
+		log.Error().Err(err).Int64("chatID", ctx.EffectiveChat.Id).Msg("error on save")
 	} else {
 		service.notifyAdminOnNewUser(ctx.EffectiveChat.Id)
 	}
@@ -241,16 +348,54 @@ func (service *Impl) generateReport() {
 	ok := false
 	if len(cryptocurrencies) > 0 {
 		msg := "📢 *Daily Crypto Report* 🚀\n\n"
+
+		msg += "📈 *Maket Overview this last 2 days*\n"
+
+		yesterdayBTC, err := service.cmcService.FetchForSymbolYesterday("BTC")
+		twoDaysBTC, err2 := service.cmcService.FetchForSymbolForTwoDaysAgo("BTC")
+		if err == nil && err2 == nil {
+			msg += GenerateTokenSentence("BTC", yesterdayBTC.Price, twoDaysBTC.Price) + "\n" //fmt.Sprintf("💰 BTC Price: `$%.2f`\n", histo.Price)
+		}
+		yesterdayETH, err := service.cmcService.FetchForSymbolYesterday("ETH")
+		twoDaysETH, err2 := service.cmcService.FetchForSymbolForTwoDaysAgo("ETH")
+		if err == nil && err2 == nil {
+			msg += GenerateTokenSentence("ETH", yesterdayETH.Price, twoDaysETH.Price) + "\n\n" //fmt.Sprintf("💰 BTC Price: `$%.2f`\n", histo.Price)
+		}
+
+		topGainers, err := service.cmcService.GetTopGainers()
+		if err == nil {
+			for _, gainer := range topGainers {
+				msg += fmt.Sprintf("- %s (+%.2f%%)\n", gainer.Symbol, gainer.PercentChange)
+			}
+		} else {
+			log.Error().Err(err).Msg("error on top gainers")
+		}
+
+		msg += "\n"
+		msg += "👉 *Focus on tokens*\n\n"
+
 		for _, crycryptocurrency := range cryptocurrencies {
 			msg += "🔹 *" + crycryptocurrency.Desc + "*\n"
 			histo, errPrice := service.cmcService.FetchForSymbolYesterday(crycryptocurrency.Symbol)
+			histo7DaysAgo, errPrice7Days := service.cmcService.FetchForSymbol7DaysAgo(crycryptocurrency.Symbol)
 			trendy := service.cmcService.IsCryptoTrendyYersterday(crycryptocurrency.Symbol)
 			community, errCommunity := service.cmcService.FetchCommunityDataForSymbolYesterday(crycryptocurrency.CryptoId)
 
 			if errPrice == nil {
+
 				msg += fmt.Sprintf("💰 Price: `$%.2f`\n", histo.Price)
+				if errPrice7Days == nil {
+					percent := ((histo.Price - histo7DaysAgo.Price) / histo7DaysAgo.Price) * 100
+					if percent < 0 {
+						msg += fmt.Sprintf("📉 7 days : `%.2f%%`\n", percent)
+					} else {
+						msg += fmt.Sprintf("📈 7 days : `%.2f%%`\n", percent)
+					}
+
+				}
 				msg += fmt.Sprintf("📊 Rank: `#%d`\n", histo.Rank)
-				msg += fmt.Sprintf("🏛 Market Cap: `$%.2f`\n", histo.Marketcap)
+				msg += fmt.Sprintf("🏛 Market Cap: `$%s`\n", humanize.CommafWithDigits(histo.Marketcap, 2))
+				//fmt.Sprintf("🏛 Market Cap: `$%.2f`\n", histo.Marketcap)
 				ok = true
 			}
 			if trendy {
@@ -262,20 +407,27 @@ func (service *Impl) generateReport() {
 				msg += fmt.Sprintf("👥 *Followers on CMC:* `%s`\n", community.Followers)
 				msg += fmt.Sprintf("⭐ *Watchlist Count:* `%s`\n", community.WatchCount)
 			}
+
+			//degeu
+			if histo.Symbol == "RLC" {
+				tweets, errTweets := service.twitterService.GetYesterdayTweets()
+				if errTweets == nil && len(tweets) > 0 {
+					msg += "🔥 *Twitter Highlights from Yesterday*\n\n"
+					for _, tweet := range tweets {
+						msg += "🔗 [Tweet Link](" + tweet.PermanentURL + ")\n"
+					}
+
+				} else {
+					msg += "No Twitter activity yesterday.\n"
+				}
+			}
+
 			msg += "\n"
 		}
 
-		histo, err := service.cmcService.FetchForSymbolYesterday("BTC")
-		if err == nil {
-			msg += fmt.Sprintf("💰 BTC Price: `$%.2f`\n", histo.Price)
-		}
-
-		histo, err = service.cmcService.FetchForSymbolYesterday("ETH")
-		if err == nil {
-			msg += fmt.Sprintf("💰 ETH Price: `$%.2f`\n", histo.Price)
-		}
 		msg += "\n"
-		msg += "📆 Data from *yesterday*. Stay tuned for more updates! 📈\n"
+		msg += "📆 Data from *yesterday*. Stay tuned for more updates! 📈\n\n"
+		msg += "⚠️ The report is based on yesterday's data, so 7-day data actually means today minus 8 days.\n"
 
 		if ok {
 			service.cache.Set("daily_report", msg, cache.NoExpiration)
@@ -284,11 +436,19 @@ func (service *Impl) generateReport() {
 
 }
 
+func (service *Impl) isASubscriber(chatID int64) bool {
+	u, err := service.telegramRepo.FindByID(chatID)
+	if err != nil || u.ChatID != chatID {
+		return false
+	}
+	return true
+}
+
 func (service *Impl) OnNotify(e observer.Event) {
 	log.Info().Msg("Received internal notification")
 	if e.E == observer.TrendingEvent {
 		service.tendringNotify()
-	} else if e.E == observer.RankingEvent {
+	} else {
 		service.generateReport()
 	}
 
@@ -371,9 +531,6 @@ func getMessageFromMessageType(messageType MessageType) string {
 	case MessageTypeWelcome:
 		msg := "👋 Hi! I'm *RLC Watchdog* 🤖\n\n"
 		msg += "This bot keeps you updated on RLC's key metrics 📊—trending status, rank, and how it compares to competitors.\n\n"
-		msg += "No need to do anything! I'll send you a daily report automatically 📨. Just sit back and stay informed.\n\n"
-		msg += "✅ *Want to receive updates?* Type `/subscribe` to start receiving daily reports.\n"
-		msg += "❌ *Want to stop updates?* Type `/unsubscribe` at any time.\n\n"
 		msg += "💬 *Need help?* Type `/help` for a list of commands."
 
 		return msg
@@ -381,13 +538,17 @@ func getMessageFromMessageType(messageType MessageType) string {
 	case MessageTypeHelp:
 		msg := "🤖 *RLC Watchdog* – Help Guide 📢\n\n"
 		msg += "This bot provides daily updates on RLC’s ranking and trends 📈.\n\n"
-		msg += "📝 *Commands available:*\n"
-		msg += "✅ `/subscribe` – Start receiving daily reports.\n"
-		msg += "❌ `/unsubscribe` – Stop receiving daily reports.\n"
-		msg += "📊 `/report` – Get the latest RLC report instantly.\n"
-		msg += "💡 `/help` – Show this help message.\n\n"
-		msg += "🚀 Stay ahead with the latest RLC data!\n"
+		msg += "⚙️ *Basic Commands:*\n"
+		msg += "- `/subscribe` – Start receiving daily reports. 🤝\n"
+		msg += "- `/unsubscribe` – Stop receiving daily reports. 👋\n"
+		msg += "- `/report` – Get the latest RLC report instantly. 📊\n"
+		msg += "- `/help` – Show this help message. 💡\n\n"
 
+		msg += "\n"
+		msg += "🚀 *Subscribers Features:* \n"
+		msg += "- `/tokens <symbol1> [symbol2] .. [symbol5]` - Get report for this token (only TOP 1000). 🔍\n"
+		msg += "\n"
+		msg += "🔗 Stay ahead with the latest RLC data!\n"
 		return msg
 
 	case MessageTypeSubscribe:
@@ -407,11 +568,26 @@ func getMessageFromMessageType(messageType MessageType) string {
 	default:
 		msg := "👋 Hi! I'm *RLC Watchdog* 🤖\n\n"
 		msg += "This bot keeps you updated on RLC's key metrics 📊—trending status, rank, and how it compares to competitors.\n\n"
-		msg += "No need to do anything! I'll send you a daily report automatically 📨. Just sit back and stay informed.\n\n"
-		msg += "✅ *Want to receive updates?* Type `/subscribe` to start receiving daily reports.\n"
-		msg += "❌ *Want to stop updates?* Type `/unsubscribe` at any time.\n\n"
 		msg += "💬 *Need help?* Type `/help` for a list of commands."
 
 		return msg
+	}
+}
+
+// GenerateTokenSentence generates a sentence describing the token's performance
+func GenerateTokenSentence(symbol string, yesterdayPrice, twoDaysAgoPrice float64) string {
+	// Compute the percentage change over 2 days
+	percentChange := ((yesterdayPrice - twoDaysAgoPrice) / twoDaysAgoPrice) * 100
+
+	// Get the proper name ($BTC or $ETH)
+	tokenName := fmt.Sprintf("$%s", symbol)
+
+	// Generate sentence based on percentage change
+	if math.Abs(percentChange) <= 2 {
+		return fmt.Sprintf("%s remains stable at $%.0f, with a slight %.2f%% move over the past two days.", tokenName, yesterdayPrice, percentChange)
+	} else if percentChange > 2 {
+		return fmt.Sprintf("%s continues its bullish momentum, rising to $%.0f (+%.2f%%) in the last two days.", tokenName, yesterdayPrice, percentChange)
+	} else {
+		return fmt.Sprintf("%s is facing some pressure, dropping to $%.0f (-%.2f%%) over the last two days.", tokenName, yesterdayPrice, math.Abs(percentChange))
 	}
 }

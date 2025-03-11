@@ -59,7 +59,7 @@ func New() (*Impl, error) {
 		return nil, errCMC
 	}
 
-	telegramService, errTg := telegram.New(scheduler, viper.GetString(constants.TelegramBotToken), telegramRepo, coinmarketcapService)
+	telegramService, errTg := telegram.New(scheduler, viper.GetString(constants.TelegramBotToken), telegramRepo, coinmarketcapService, twitterService)
 	if errTg != nil {
 		return nil, errTg
 	}
@@ -72,6 +72,7 @@ func New() (*Impl, error) {
 		coinmarketcapService: coinmarketcapService,
 		telegramService:      telegramService,
 		twitterService:       twitterService,
+		db:                   db,
 	}, nil
 }
 

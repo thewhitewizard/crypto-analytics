@@ -83,6 +83,12 @@ type CryptoCurrency struct {
 	Tags        []string  `json:"tags"`
 }
 
+type Gainer struct {
+	Symbol        string
+	PriceChange   float64
+	PercentChange float64
+}
+
 func (c *CryptoCurrency) KeepOnlyRelevantsTags() string {
 	tags := ""
 	if len(c.Tags) == 0 {
@@ -107,7 +113,10 @@ type Service interface {
 	IsCryptoTrendyToday(symbol string) bool
 	IsCryptoTrendyYersterday(symbol string) bool
 	FetchForSymbolYesterday(symbol string) (entities.Historical, error)
+	FetchForSymbol7DaysAgo(symbol string) (entities.Historical, error)
+	FetchForSymbolForTwoDaysAgo(symbol string) (entities.Historical, error)
 	FetchCommunityDataForSymbolYesterday(id int) (entities.CommunityData, error)
+	GetTopGainers() ([]Gainer, error)
 	RegisterObserver(o observer.Observer)
 }
 

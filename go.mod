@@ -13,7 +13,7 @@ require (
 
 require (
 	github.com/PaulSonOfLars/gotgbot/v2 v2.0.0-rc.31
-	github.com/dustin/go-humanize v1.0.1 // indirect
+	github.com/dustin/go-humanize v1.0.1
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/glebarez/go-sqlite v1.21.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect

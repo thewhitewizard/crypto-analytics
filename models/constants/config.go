@@ -1,6 +1,10 @@
 package constants
 
-import "github.com/rs/zerolog"
+import (
+	"time"
+
+	"github.com/rs/zerolog"
+)
 
 const (
 	ConfigFileName = ".env"
@@ -40,6 +44,12 @@ const (
 	// Cron tab to historical.
 	HistoricalCryptoCronTab = "HISTORICAL_CRYPTO_CRON_TAB"
 
+	// Redis URL with the following format: HOST:PORT.
+	RedisURL = "REDIS_URL"
+
+	// Coingecko cache. Duration type.
+	CoingeckoCache = "COINGECKO_CACHE"
+
 	defaultTelegramBotToken         = ""
 	defaultTwitterAuthToken         = ""
 	defaultTwitterCSRFToken         = ""
@@ -49,6 +59,8 @@ const (
 	defaultHealthCrontab            = "* * * * *"
 	defaultTrendingCryptoCrontTab   = "0 */6 * * *"
 	defaultHistoricalCryptoCrontTab = "0 3 * * *"
+	defaultRedisUrl                 = "localhost:6379"
+	defaultCoingeckoCache           = 5 * time.Minute
 	defaultLogLevel                 = zerolog.InfoLevel
 	defaultProduction               = false
 )
@@ -59,6 +71,7 @@ func GetDefaultConfigValues() map[string]any {
 		TwitterCSRFToken:        defaultTwitterCSRFToken,
 		TwitterTweetCount:       defaultTwitterTweetCount,
 		ProbePort:               defaultProbePort,
+		RedisURL:                defaultRedisUrl,
 		SqliteURL:               defaultSqliteURL,
 		LogLevel:                defaultLogLevel.String(),
 		Production:              defaultProduction,
@@ -66,5 +79,6 @@ func GetDefaultConfigValues() map[string]any {
 		TrendingCryptoCronTab:   defaultTrendingCryptoCrontTab,
 		HistoricalCryptoCronTab: defaultHistoricalCryptoCrontTab,
 		TelegramBotToken:        defaultTelegramBotToken,
+		CoingeckoCache:          defaultCoingeckoCache,
 	}
 }

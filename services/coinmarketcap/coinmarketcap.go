@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"time"
 
 	"github.com/go-co-op/gocron/v2"
@@ -41,6 +42,8 @@ func New(scheduler gocron.Scheduler,
 
 	if service.communityRepo.Count() == 0 {
 		service.fetchAndSaveCommunityData(true)
+	} else {
+		service.fetchAndSaveCommunityData(false)
 	}
 
 	_, errTrendingJob := scheduler.NewJob(
@@ -137,7 +140,7 @@ func (service *Impl) fetchAndSaveCommunityData(first bool) {
 	}
 	for _, cryptoccryptocurrency := range cryptocurrencies {
 		log.Info().Str("symbol", cryptoccryptocurrency.Symbol).Msg("Fetching community data")
-		entity := entities.CommunityData{ID: cryptoccryptocurrency.CryptoId, Symbol: cryptoccryptocurrency.Symbol, Day: day, Followers: "0", WatchCount: "0"}
+		entity := entities.CommunityData{Cid: cryptoccryptocurrency.CryptoId, Symbol: cryptoccryptocurrency.Symbol, Day: day, Followers: "0", WatchCount: "0"}
 		profileData, errProfile := service.fetchProfileData(cryptoccryptocurrency.Handle)
 		watchData, errWatch := service.fetchWatcherData(cryptoccryptocurrency.CryptoId)
 		if errProfile == nil {
@@ -146,7 +149,10 @@ func (service *Impl) fetchAndSaveCommunityData(first bool) {
 		if errWatch == nil {
 			entity.WatchCount = watchData.Data.WatchCount
 		}
-		service.communityRepo.Save(entity)
+		err := service.communityRepo.Save(entity)
+		if err != nil {
+			log.Error().Err(err).Str("symbol", cryptoccryptocurrency.Symbol).Msg("Fetching community data")
+		}
 	}
 	log.Info().Msg("End fetching community data")
 	service.notify(observer.Event{E: observer.RankingEvent})
@@ -302,7 +308,19 @@ func (service *Impl) IsCryptoTrendyYersterday(symbol string) bool {
 func (service *Impl) FetchForSymbolYesterday(symbol string) (entities.Historical, error) {
 	yesterday := time.Now().AddDate(0, 0, -1).Format(dates.DateFormat)
 
-	return service.histoRepo.FetchForSymbolYesterday(symbol, yesterday)
+	return service.histoRepo.FetchForSymbolForDay(symbol, yesterday)
+}
+
+func (service *Impl) FetchForSymbolForTwoDaysAgo(symbol string) (entities.Historical, error) {
+	twoDays := time.Now().AddDate(0, 0, -2).Format(dates.DateFormat)
+
+	return service.histoRepo.FetchForSymbolForDay(symbol, twoDays)
+}
+
+func (service *Impl) FetchForSymbol7DaysAgo(symbol string) (entities.Historical, error) {
+	sevenDaysAgo := time.Now().AddDate(0, 0, -8).Format(dates.DateFormat)
+
+	return service.histoRepo.FetchForSymbolForDay(symbol, sevenDaysAgo)
 }
 
 func (service *Impl) IsCryptoTrendyToday(symbol string) bool {
@@ -318,4 +336,56 @@ func (service *Impl) FetchCommunityDataForSymbolYesterday(id int) (entities.Comm
 	yesterday := time.Now().AddDate(0, 0, -1).Format(dates.DateFormat)
 
 	return service.communityRepo.FetchForSymbolYesterday(id, yesterday)
+}
+
+func (service *Impl) GetTopGainers() ([]Gainer, error) {
+
+	twoDays := time.Now().AddDate(0, 0, -2).Format(dates.DateFormat)
+	yesterday := time.Now().AddDate(0, 0, -1).Format(dates.DateFormat)
+	yesterdayData, err := service.histoRepo.FetchForDay(yesterday)
+	twoDaysData, err2 := service.histoRepo.FetchForDay(twoDays)
+	if err != nil {
+		log.Error().Err(err).Msg("failed to fetch yesterdayData")
+		return nil, err
+	}
+	if err2 != nil {
+		log.Error().Err(err2).Msg("failed to fetch twoDaysData")
+		return nil, err2
+	}
+	twoDaysMap := make(map[string]float64)
+	for _, data := range twoDaysData {
+		twoDaysMap[data.Symbol] = data.Price
+	}
+
+	// Compute percentage change
+	var gainers []Gainer
+	for _, yData := range yesterdayData {
+		oldPrice, exists := twoDaysMap[yData.Symbol]
+		if !exists || oldPrice == 0 {
+			continue // Skip if no data or invalid price
+		}
+
+		priceChange := yData.Price - oldPrice
+		percentChange := (priceChange / oldPrice) * 100
+
+		// Consider only positive changes (gainers)
+		if percentChange > 0 {
+			gainers = append(gainers, Gainer{
+				Symbol:        yData.Symbol,
+				PriceChange:   priceChange,
+				PercentChange: percentChange,
+			})
+		}
+	}
+
+	// Sort gainers by highest percentage increase
+	sort.Slice(gainers, func(i, j int) bool {
+		return gainers[i].PercentChange > gainers[j].PercentChange
+	})
+
+	// Return top 3 gainers
+	if len(gainers) > 3 {
+		return gainers[:3], nil
+	}
+	return gainers, nil
 }

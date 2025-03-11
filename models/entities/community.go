@@ -1,9 +1,9 @@
 package entities
 
 type CommunityData struct {
-	ID         int    `gorm:"primaryKey"`
+	Cid        int    `gorm:"primaryKey"`
 	Day        string `gorm:"primaryKey"`
-	Symbol     string
+	Symbol     string `gorm:"primaryKey"`
 	Followers  string
 	WatchCount string
 }

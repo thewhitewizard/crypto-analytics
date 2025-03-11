@@ -2,6 +2,7 @@ package twitter
 
 import (
 	repo "crypto-analytics/repositories/twitter"
+	"crypto-analytics/utils/dates"
 	"sort"
 	"sync"
 
@@ -40,6 +41,17 @@ func New(scheduler gocron.Scheduler,
 	return service, nil
 }
 
+func (service *Impl) GetYesterdayTweets() ([]entities.Tweet, error) {
+	start, end := dates.GetYesterdayTimestamps()
+	log.Info().Int64("start", start).Int64("end", end).Msg("Start fetching tweets")
+	tweets, err := service.repository.GetTweetBetweenTimestamps(start, end)
+	if err != nil {
+		return tweets, err
+	}
+
+	return filterRootTweets(tweets), nil
+}
+
 func (service *Impl) fetchAndSaveTweets() {
 	log.Info().Msg("Start fetching twitter accounts")
 	var wg sync.WaitGroup
@@ -73,27 +85,10 @@ func (service *Impl) checkTwitterAccount(account constants.TwitterAccount) {
 	tweets = service.keepInterestingTweets(tweets)
 
 	for _, tweet := range tweets {
-		tweetToSave := entities.Tweet{ID: tweet.ID}
-		tweetToSave.ConversationID = tweet.ConversationID
-		tweetToSave.IsPin = tweet.IsPin
-		tweetToSave.IsQuoted = tweet.IsQuoted
-		tweetToSave.Mentions = len(tweet.Mentions)
-		tweetToSave.IsReply = tweet.IsQuoted
-		tweetToSave.IsRetweet = tweet.IsQuoted
-		tweetToSave.IsSelfThread = tweet.IsQuoted
-		tweetToSave.Likes = tweet.Likes
-		tweetToSave.Name = tweet.Name
-		tweetToSave.PermanentURL = tweet.PermanentURL
-		tweetToSave.Replies = tweet.Replies
-		tweetToSave.Retweets = tweet.Retweets
-		//tweetToSave.Text = tweet.Text
-		tweetToSave.Timestamp = tweet.Timestamp
-		tweetToSave.UserID = tweet.UserID
-		tweetToSave.Views = tweet.Views
+		tweetToSave := MapTweetToEntity(tweet)
 		service.repository.SaveOrUpdate(tweetToSave)
 
 	}
-
 }
 
 func (service *Impl) keepInterestingTweets(tweets []*twitterscraper.Tweet) []*twitterscraper.Tweet {
@@ -101,6 +96,7 @@ func (service *Impl) keepInterestingTweets(tweets []*twitterscraper.Tweet) []*tw
 
 	for _, tweet := range tweets {
 		// Exclude RTs
+
 		if tweet.RetweetedStatus != nil {
 			continue
 		}
@@ -113,4 +109,50 @@ func (service *Impl) keepInterestingTweets(tweets []*twitterscraper.Tweet) []*tw
 	})
 
 	return result
+}
+
+func MapTweetToEntity(tweet *twitterscraper.Tweet) entities.Tweet {
+	return entities.Tweet{
+		ID:             tweet.ID,
+		ConversationID: tweet.ConversationID,
+		IsPin:          tweet.IsPin,
+		IsQuoted:       tweet.IsQuoted,
+		Mentions:       len(tweet.Mentions),
+		IsReply:        tweet.IsQuoted,
+		IsRetweet:      tweet.IsQuoted,
+		IsSelfThread:   tweet.IsQuoted,
+		Likes:          tweet.Likes,
+		Name:           tweet.Name,
+		PermanentURL:   tweet.PermanentURL,
+		Replies:        tweet.Replies,
+		Retweets:       tweet.Retweets,
+		Timestamp:      tweet.Timestamp,
+		UserID:         tweet.UserID,
+		Views:          tweet.Views,
+	}
+}
+
+func filterRootTweets(tweets []entities.Tweet) []entities.Tweet {
+	if len(tweets) == 0 {
+		return nil
+	}
+
+	// Étape 1 : On filtre pour ne garder que le plus ancien tweet (root) par conversation_id
+	oldestPerConversation := make(map[string]entities.Tweet)
+
+	for _, tweet := range tweets {
+		if existing, exists := oldestPerConversation[tweet.ConversationID]; !exists || tweet.Timestamp < existing.Timestamp {
+			oldestPerConversation[tweet.ConversationID] = tweet
+		}
+	}
+
+	// Étape 2 : On cherche le plus récent des roots
+	var mostRecentRoot *entities.Tweet
+	for _, tweet := range oldestPerConversation {
+		if mostRecentRoot == nil || tweet.Timestamp > mostRecentRoot.Timestamp {
+			mostRecentRoot = &tweet
+		}
+	}
+
+	return []entities.Tweet{*mostRecentRoot}
 }

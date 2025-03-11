@@ -17,7 +17,7 @@ func (repo *Impl) Save(crypto entities.CommunityData) error {
 
 	var existing entities.CommunityData
 
-	result := repo.db.GetDB().Where("id = ?", crypto.ID).Where("day = ?", crypto.Day).First(&existing)
+	result := repo.db.GetDB().Where("cid = ?", crypto.Cid).Where("day = ?", crypto.Day).First(&existing)
 
 	if result.Error != nil {
 		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
@@ -45,7 +45,7 @@ func (repo *Impl) Count() int64 {
 
 func (repo *Impl) FetchForSymbolYesterday(id int, day string) (entities.CommunityData, error) {
 	var existing entities.CommunityData
-	result := repo.db.GetDB().Where("id = ?", id).Where("day = ?", day).First(&existing)
+	result := repo.db.GetDB().Where("cid = ?", id).Where("day = ?", day).First(&existing)
 
 	return existing, result.Error
 }

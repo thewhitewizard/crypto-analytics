@@ -38,3 +38,22 @@ func StringToDate(from string, dateFormat string) (time.Time, error) {
 func DateToString(from time.Time, dateFormat string) string {
 	return from.Format(dateFormat)
 }
+
+// GetYesterdayTimestamps returns the start and end timestamps (Unix time in seconds) for yesterday's date
+func GetYesterdayTimestamps() (int64, int64) {
+	now := time.Now()
+
+	// Get start of today (midnight)
+	startOfToday := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+
+	// Start of yesterday (midnight)
+	startOfYesterday := startOfToday.AddDate(0, 0, -1)
+
+	// End of yesterday (23:59:59)
+	endOfYesterday := startOfToday.Add(-time.Second)
+
+	startTimestamp := startOfYesterday.Unix()
+	endTimestamp := endOfYesterday.Unix()
+
+	return startTimestamp, endTimestamp
+}

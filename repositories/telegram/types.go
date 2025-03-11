@@ -8,6 +8,7 @@ import (
 type Repository interface {
 	SaveOrUpdate(user entities.TelegramUser) error
 	Delete(user entities.TelegramUser) error
+	FindByID(chatID int64) (entities.TelegramUser, error)
 	FetchAll() ([]entities.TelegramUser, error)
 }
 

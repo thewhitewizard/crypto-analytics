@@ -38,6 +38,12 @@ func (repo *Impl) SaveOrUpdate(user entities.TelegramUser) error {
 	return nil
 }
 
+func (repo *Impl) FindByID(chatID int64) (entities.TelegramUser, error) {
+	var user entities.TelegramUser
+	result := repo.db.GetDB().Where("chat_id = ?", chatID).First(&user)
+	return user, result.Error
+}
+
 func (repo *Impl) Delete(user entities.TelegramUser) error {
 	result := repo.db.GetDB().Delete(&entities.TelegramUser{}, user.ChatID)
 	return result.Error
