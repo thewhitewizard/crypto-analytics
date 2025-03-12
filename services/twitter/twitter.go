@@ -27,7 +27,9 @@ func New(scheduler gocron.Scheduler,
 		scraper:    twitterscraper.New(),
 	}
 
-	service.fetchAndSaveTweets()
+	if viper.GetBool(constants.Production) {
+		service.fetchAndSaveTweets()
+	}
 
 	_, errJob := scheduler.NewJob(
 		gocron.CronJob("*/15 * * * *", true),

@@ -3,6 +3,7 @@ package telegram
 import (
 	telegramRepo "crypto-analytics/repositories/telegram"
 	cmcService "crypto-analytics/services/coinmarketcap"
+	"crypto-analytics/services/cryptorank"
 	twitterService "crypto-analytics/services/twitter"
 	"errors"
 
@@ -34,10 +35,11 @@ type Service interface {
 }
 
 type Impl struct {
-	bot            *gotgbot.Bot
-	updater        *ext.Updater
-	telegramRepo   telegramRepo.Repository
-	cmcService     cmcService.Service
-	twitterService twitterService.Service
-	cache          *cache.Cache
+	bot               *gotgbot.Bot
+	updater           *ext.Updater
+	telegramRepo      telegramRepo.Repository
+	cmcService        cmcService.Service
+	twitterService    twitterService.Service
+	cryptorankService cryptorank.Service
+	cache             *cache.Cache
 }

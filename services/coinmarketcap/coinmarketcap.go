@@ -34,16 +34,17 @@ func New(scheduler gocron.Scheduler,
 		communityRepo: community,
 	}
 
-	service.fetchAndSaveTrendingCrypto()
+	if viper.GetBool(constants.Production) {
+		service.fetchAndSaveTrendingCrypto()
+		if service.communityRepo.Count() == 0 {
+			service.fetchAndSaveCommunityData(true)
+		} else {
+			service.fetchAndSaveCommunityData(false)
+		}
 
+	}
 	if service.histoRepo.Count() == 0 {
 		service.fetchAndSaveHistoricalSinceHalving()
-	}
-
-	if service.communityRepo.Count() == 0 {
-		service.fetchAndSaveCommunityData(true)
-	} else {
-		service.fetchAndSaveCommunityData(false)
 	}
 
 	_, errTrendingJob := scheduler.NewJob(

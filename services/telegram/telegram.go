@@ -6,9 +6,11 @@ import (
 	"crypto-analytics/pkg/observer"
 	telegramRepo "crypto-analytics/repositories/telegram"
 	"math"
+	"strconv"
 
 	//geckoService "crypto-analytics/services/coingecko"
 	cmcService "crypto-analytics/services/coinmarketcap"
+	"crypto-analytics/services/cryptorank"
 	twitterService "crypto-analytics/services/twitter"
 	"crypto-analytics/utils/dates"
 	"fmt"
@@ -24,7 +26,7 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-func New(scheduler gocron.Scheduler, token string, telegramRepo telegramRepo.Repository, cmcService cmcService.Service, twitterService twitterService.Service) (*Impl, error) {
+func New(scheduler gocron.Scheduler, token string, telegramRepo telegramRepo.Repository, cmcService cmcService.Service, twitterService twitterService.Service, cryptorankService cryptorank.Service) (*Impl, error) {
 
 	if token == "" {
 		return &Impl{}, ErrTokenIsMissing
@@ -43,7 +45,14 @@ func New(scheduler gocron.Scheduler, token string, telegramRepo telegramRepo.Rep
 		MaxRoutines: ext.DefaultMaxRoutines,
 	})
 
-	service := Impl{bot: b, telegramRepo: telegramRepo, cmcService: cmcService, twitterService: twitterService, cache: cache.New(1*time.Hour, 2*time.Hour)}
+	service := Impl{
+		bot:               b,
+		telegramRepo:      telegramRepo,
+		cmcService:        cmcService,
+		twitterService:    twitterService,
+		cryptorankService: cryptorankService,
+		cache:             cache.New(1*time.Hour, 2*time.Hour)}
+
 	dispatcher.AddHandler(handlers.NewCommand("start", service.startCmd))
 	dispatcher.AddHandler(handlers.NewCommand("help", service.helpCmd))
 	dispatcher.AddHandler(handlers.NewCommand("report", service.reportCmd))
@@ -66,12 +75,21 @@ func New(scheduler gocron.Scheduler, token string, telegramRepo telegramRepo.Rep
 	}
 
 	_, errAdminJob := scheduler.NewJob(
-		gocron.CronJob("0 14 * * *", true),
+		gocron.CronJob("0 13 * * *", true),
 		gocron.NewTask(func() { service.dailyAdminReport() }),
 		gocron.WithName("Send daily report to admin"),
 	)
 	if errAdminJob != nil {
 		return nil, errAdminJob
+	}
+
+	_, errAIndicatorJob := scheduler.NewJob(
+		gocron.CronJob("0 14 * * *", true),
+		gocron.NewTask(func() { service.sendDailyIndicator(-1) }),
+		gocron.WithName("Send dailymarket indicator"),
+	)
+	if errAIndicatorJob != nil {
+		return nil, errAIndicatorJob
 	}
 
 	/**
@@ -95,6 +113,7 @@ func New(scheduler gocron.Scheduler, token string, telegramRepo telegramRepo.Rep
 	**/
 	service.generateReport()
 	service.sendDailyReport(constants.TelegramAdmin)
+	service.sendDailyIndicator(constants.TelegramAdmin)
 	return &service, nil
 }
 
@@ -361,7 +380,7 @@ func (service *Impl) generateReport() {
 		if err == nil && err2 == nil {
 			msg += GenerateTokenSentence("ETH", yesterdayETH.Price, twoDaysETH.Price) + "\n\n" //fmt.Sprintf("💰 BTC Price: `$%.2f`\n", histo.Price)
 		}
-
+		/**
 		topGainers, err := service.cmcService.GetTopGainers()
 		if err == nil {
 			for _, gainer := range topGainers {
@@ -370,6 +389,7 @@ func (service *Impl) generateReport() {
 		} else {
 			log.Error().Err(err).Msg("error on top gainers")
 		}
+			**/
 
 		msg += "\n"
 		msg += "👉 *Focus on tokens*\n\n"
@@ -404,8 +424,8 @@ func (service *Impl) generateReport() {
 				msg += fmt.Sprintf("🔥 Trending: *%s*\n\n", "No ❄️")
 			}
 			if errCommunity == nil {
-				msg += fmt.Sprintf("👥 *Followers on CMC:* `%s`\n", community.Followers)
-				msg += fmt.Sprintf("⭐ *Watchlist Count:* `%s`\n", community.WatchCount)
+				msg += fmt.Sprintf("👥 *Followers on CMC:* `%s`\n", stringNumberToHumanize(community.Followers))
+				msg += fmt.Sprintf("⭐ *Watchlist Count:* `%s`\n", stringNumberToHumanize(community.WatchCount))
 			}
 
 			//degeu
@@ -453,6 +473,39 @@ func (service *Impl) OnNotify(e observer.Event) {
 	}
 
 }
+
+func (service *Impl) sendDailyIndicator(chatID int64) {
+	log.Info().Msg("Send daily Indicator")
+	var users []entities.TelegramUser
+	var err error
+	if chatID != -1 {
+		users = append(users, entities.TelegramUser{ChatID: chatID})
+	} else {
+		users, err = service.telegramRepo.FetchAll()
+	}
+
+	if err == nil && len(users) > 0 {
+		indicator, err := service.cryptorankService.GetMarketIndicator()
+		if err == nil && indicator.FearGreedIndex > 0 && indicator.BtcDominance > 0 {
+
+			emoji, sentiment := getSentiment(indicator.FearGreedIndex)
+
+			message := fmt.Sprintf(
+				"📊 *Market Sentiment Update* ( _ exprimental feature _ )\n\n"+
+					"🏛 *BTC Dominance:* `%.2f%%`\n"+
+					"🧭 *Fear & Greed Index:* %s `%d/100` (%s)\n\n"+
+					"👉 *Market Insight:* %s",
+				indicator.BtcDominance, emoji, indicator.FearGreedIndex, sentiment, getInsight(indicator.FearGreedIndex),
+			)
+			for _, user := range users {
+				log.Info().Str("cmd", "report").Int64("chatID", user.ChatID).Msg("send indicator")
+				service.bot.SendMessage(user.ChatID, message, &gotgbot.SendMessageOpts{ParseMode: "Markdown"})
+			}
+
+		}
+	}
+}
+
 func (service *Impl) sendDailyReport(chatID int64) {
 	log.Info().Msg("Send daily report")
 	var users []entities.TelegramUser
@@ -589,5 +642,46 @@ func GenerateTokenSentence(symbol string, yesterdayPrice, twoDaysAgoPrice float6
 		return fmt.Sprintf("%s continues its bullish momentum, rising to $%.0f (+%.2f%%) in the last two days.", tokenName, yesterdayPrice, percentChange)
 	} else {
 		return fmt.Sprintf("%s is facing some pressure, dropping to $%.0f (-%.2f%%) over the last two days.", tokenName, yesterdayPrice, math.Abs(percentChange))
+	}
+}
+
+func stringNumberToHumanize(value string) string {
+	if len(value) == 0 {
+		return value
+	}
+	s, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return value
+	}
+	return humanize.CommafWithDigits(s, 0)
+}
+
+func getSentiment(index int) (emoji string, sentiment string) {
+	switch {
+	case index <= 20:
+		return "🔴", "Extreme Fear 😨"
+	case index <= 40:
+		return "🟠", "Fear 😟"
+	case index <= 60:
+		return "🟡", "Neutral 😐"
+	case index <= 80:
+		return "🟢", "Greed 😊"
+	default:
+		return "🟢", "Extreme Greed 🚀"
+	}
+}
+
+func getInsight(index int) string {
+	switch {
+	case index <= 20:
+		return "Market is in *panic mode*! Could this be a *buying opportunity*? 🧐"
+	case index <= 40:
+		return "Investors are *cautious*. Will BTC recover soon? 🤔"
+	case index <= 60:
+		return "Market sentiment is *balanced*. Let’s see where BTC leads next! ⚖️"
+	case index <= 80:
+		return "Investors are *optimistic*! Are we entering a bull phase? 📈"
+	default:
+		return "🚀 *FOMO Alert!* Markets are overheating—stay cautious! 😵‍💫"
 	}
 }

@@ -62,7 +62,7 @@ const (
 	defaultRedisUrl                 = "localhost:6379"
 	defaultCoingeckoCache           = 5 * time.Minute
 	defaultLogLevel                 = zerolog.InfoLevel
-	defaultProduction               = false
+	defaultProduction               = true
 )
 
 func GetDefaultConfigValues() map[string]any {

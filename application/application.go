@@ -9,6 +9,7 @@ import (
 	trendingRepo "crypto-analytics/repositories/trending"
 	twitterRepo "crypto-analytics/repositories/twitter"
 	"crypto-analytics/services/coinmarketcap"
+	"crypto-analytics/services/cryptorank"
 	"crypto-analytics/services/telegram"
 
 	"crypto-analytics/services/twitter"
@@ -59,7 +60,12 @@ func New() (*Impl, error) {
 		return nil, errCMC
 	}
 
-	telegramService, errTg := telegram.New(scheduler, viper.GetString(constants.TelegramBotToken), telegramRepo, coinmarketcapService, twitterService)
+	cryptorankService, errCryptoRank := cryptorank.New(scheduler)
+	if errCryptoRank != nil {
+		return nil, errCryptoRank
+	}
+
+	telegramService, errTg := telegram.New(scheduler, viper.GetString(constants.TelegramBotToken), telegramRepo, coinmarketcapService, twitterService, cryptorankService)
 	if errTg != nil {
 		return nil, errTg
 	}
@@ -72,13 +78,19 @@ func New() (*Impl, error) {
 		coinmarketcapService: coinmarketcapService,
 		telegramService:      telegramService,
 		twitterService:       twitterService,
+		cryptorankService:    cryptorankService,
 		db:                   db,
 	}, nil
 }
 
 func (app *Impl) Run() {
 	app.scheduler.Start()
-	go app.telegramService.ListenAndDispatch()
+	if viper.GetBool(constants.Production) {
+		log.Info().Msgf("Production mode")
+		go app.telegramService.ListenAndDispatch()
+	} else {
+		log.Info().Msgf("Dev mode")
+	}
 	for _, job := range app.scheduler.Jobs() {
 		scheduledTime, err := job.NextRun()
 		if err == nil {
