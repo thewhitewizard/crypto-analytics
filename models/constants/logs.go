@@ -8,5 +8,9 @@ const (
 	LogTwitterName   = "twitterName"
 	LogTweetID       = "tweetID"
 	LogTweetNumber   = "tweetNumber"
+	LogFeedURL       = "feedURL"
+	LogFeedType      = "feedType"
+	LogFeedItemID    = "feedItemID"
+	LogFeedNumber    = "feedNumber"
 	LogLevelFallback = zerolog.InfoLevel
 )

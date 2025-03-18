@@ -116,6 +116,7 @@ type Service interface {
 	FetchForSymbol7DaysAgo(symbol string) (entities.Historical, error)
 	FetchForSymbolForTwoDaysAgo(symbol string) (entities.Historical, error)
 	FetchCommunityDataForSymbolYesterday(id int) (entities.CommunityData, error)
+	FetchAndSaveTrendingCrypto()
 	GetTopGainers() ([]Gainer, error)
 	RegisterObserver(o observer.Observer)
 }

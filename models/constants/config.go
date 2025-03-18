@@ -47,6 +47,12 @@ const (
 	// Redis URL with the following format: HOST:PORT.
 	RedisURL = "REDIS_URL"
 
+	// User Agent used for feed consumption.
+	UserAgent = "USER_AGENT"
+
+	// Timeout to retrieve feeds in seconds.
+	RSSTimeout = "HTTP_TIMEOUT"
+
 	// Coingecko cache. Duration type.
 	CoingeckoCache = "COINGECKO_CACHE"
 
@@ -57,12 +63,14 @@ const (
 	defaultProbePort                = 9090
 	defaultSqliteURL                = "crypto-analytics.db"
 	defaultHealthCrontab            = "* * * * *"
-	defaultTrendingCryptoCrontTab   = "0 */6 * * *"
+	defaultTrendingCryptoCrontTab   = "0 * * * *"
 	defaultHistoricalCryptoCrontTab = "0 3 * * *"
 	defaultRedisUrl                 = "localhost:6379"
 	defaultCoingeckoCache           = 5 * time.Minute
 	defaultLogLevel                 = zerolog.InfoLevel
 	defaultProduction               = true
+	defaultUserAgent                = ExternalName
+	defaultRSSTimeout               = 60
 )
 
 func GetDefaultConfigValues() map[string]any {
@@ -80,5 +88,7 @@ func GetDefaultConfigValues() map[string]any {
 		HistoricalCryptoCronTab: defaultHistoricalCryptoCrontTab,
 		TelegramBotToken:        defaultTelegramBotToken,
 		CoingeckoCache:          defaultCoingeckoCache,
+		UserAgent:               defaultUserAgent,
+		RSSTimeout:              defaultRSSTimeout,
 	}
 }

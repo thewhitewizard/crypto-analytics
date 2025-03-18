@@ -60,9 +60,10 @@ func New(scheduler gocron.Scheduler, token string, telegramRepo telegramRepo.Rep
 	dispatcher.AddHandler(handlers.NewCommand("unsubscribe", service.unsubscribeCmd))
 	dispatcher.AddHandler(handlers.NewCommand("maintenance", service.maintenanceCmd))
 	dispatcher.AddHandler(handlers.NewCommand("banner", service.adminMessageCmd))
+	dispatcher.AddHandler(handlers.NewCommand("refresh", service.refreshTrendingMessageCmd))
+
 	dispatcher.AddHandler(handlers.NewCommand("tokens", service.tokenInfoCmd))
 	dispatcher.AddHandler(handlers.NewCommand("", service.unknownCmd))
-
 	service.updater = ext.NewUpdater(dispatcher, nil)
 
 	_, errJob := scheduler.NewJob(
@@ -135,6 +136,15 @@ func (service *Impl) ListenAndDispatch() error {
 	service.updater.Idle()
 
 	time.Sleep(1 * time.Hour)
+	return nil
+}
+
+func (service *Impl) refreshTrendingMessageCmd(b *gotgbot.Bot, ctx *ext.Context) error {
+	if ctx.EffectiveChat.Id != constants.TelegramAdmin {
+		log.Warn().Str("cmd", "admin_message").Int64("chatID", ctx.EffectiveChat.Id).Msg("forbidden usage")
+		return nil
+	}
+	service.cmcService.FetchAndSaveTrendingCrypto()
 	return nil
 }
 
@@ -465,9 +475,11 @@ func (service *Impl) isASubscriber(chatID int64) bool {
 }
 
 func (service *Impl) OnNotify(e observer.Event) {
-	log.Info().Msg("Received internal notification")
+	log.Info().Any("type", e.E).Msg("Received internal notification")
 	if e.E == observer.TrendingEvent {
 		service.tendringNotify()
+	} else if e.E == observer.RSSEvent {
+		service.bot.SendMessage(constants.TelegramAdmin, e.Feed.Title, &gotgbot.SendMessageOpts{ParseMode: "Markdown"})
 	} else {
 		service.generateReport()
 	}
@@ -492,10 +504,11 @@ func (service *Impl) sendDailyIndicator(chatID int64) {
 
 			message := fmt.Sprintf(
 				"📊 *Market Sentiment Update* ( _ exprimental feature _ )\n\n"+
+					"💰 *Market Cap:* %s\n"+
 					"🏛 *BTC Dominance:* `%.2f%%`\n"+
 					"🧭 *Fear & Greed Index:* %s `%d/100` (%s)\n\n"+
 					"👉 *Market Insight:* %s",
-				indicator.BtcDominance, emoji, indicator.FearGreedIndex, sentiment, getInsight(indicator.FearGreedIndex),
+				humanize.Comma(indicator.TotalMarketCap), indicator.BtcDominance, emoji, indicator.FearGreedIndex, sentiment, getInsight(indicator.FearGreedIndex),
 			)
 			for _, user := range users {
 				log.Info().Str("cmd", "report").Int64("chatID", user.ChatID).Msg("send indicator")

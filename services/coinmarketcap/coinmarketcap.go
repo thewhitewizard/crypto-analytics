@@ -35,7 +35,7 @@ func New(scheduler gocron.Scheduler,
 	}
 
 	if viper.GetBool(constants.Production) {
-		service.fetchAndSaveTrendingCrypto()
+		service.FetchAndSaveTrendingCrypto()
 		if service.communityRepo.Count() == 0 {
 			service.fetchAndSaveCommunityData(true)
 		} else {
@@ -49,7 +49,7 @@ func New(scheduler gocron.Scheduler,
 
 	_, errTrendingJob := scheduler.NewJob(
 		gocron.CronJob(viper.GetString(constants.TrendingCryptoCronTab), true),
-		gocron.NewTask(func() { service.fetchAndSaveTrendingCrypto() }),
+		gocron.NewTask(func() { service.FetchAndSaveTrendingCrypto() }),
 		gocron.WithName("Fetch trending crypto"),
 	)
 	if errTrendingJob != nil {
@@ -263,7 +263,7 @@ func (service *Impl) fetchHistoricalPaginate(date string, start int, limit int) 
 	return &result, nil
 }
 
-func (service *Impl) fetchAndSaveTrendingCrypto() {
+func (service *Impl) FetchAndSaveTrendingCrypto() {
 	log.Info().Msg("Start fetching trending crypto")
 
 	url := fmt.Sprintf("%s/data-api/v3/cryptocurrency/listing?start=1&limit=50&sortBy=trending_24h&sortType=desc&cryptoType=all&tagType=all&audited=false", service.baseURL)

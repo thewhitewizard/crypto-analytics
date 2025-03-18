@@ -3,6 +3,7 @@ package application
 import (
 	cmcService "crypto-analytics/services/coinmarketcap"
 	"crypto-analytics/services/cryptorank"
+	"crypto-analytics/services/feeds"
 	telegramService "crypto-analytics/services/telegram"
 	"crypto-analytics/services/twitter"
 	databases "crypto-analytics/utils/databases"
@@ -22,6 +23,7 @@ type Impl struct {
 	telegramService      telegramService.Service
 	twitterService       twitter.Service
 	cryptorankService    cryptorank.Service
+	feedService          feeds.Service
 	db                   databases.SqlConnection
 	probes               insights.Probes
 }

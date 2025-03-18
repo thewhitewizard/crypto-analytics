@@ -59,11 +59,16 @@ func (service *Impl) GetMarketIndicator() (MarketIndicator, error) {
 func (service *Impl) fetchAndCache() {
 
 	index, err := service.fetchFearAndGreed()
-	dominance, errD := service.fetchDominance()
+	global, errD := service.fetchGlobalIndicator()
 
-	if err == nil && index != nil && index.Today > 0 && errD == nil && dominance != nil && len(dominance.Values) > 0 {
+	if err == nil && index != nil && index.Today > 0 && errD == nil && global != nil && global.BtcDominance > 0 {
 		log.Info().Msg("Put market indicator in cache")
-		indicator := MarketIndicator{FearGreedIndex: index.Today, FearGreedYesterdayIndex: index.Yesterday, BtcDominance: dominance.Values[len(dominance.Values)-1]}
+		indicator := MarketIndicator{
+			FearGreedIndex:          index.Today,
+			FearGreedYesterdayIndex: index.Yesterday,
+			BtcDominance:            global.BtcDominance,
+			TotalMarketCap:          global.TotalMarketCap,
+		}
 		service.cache.SetDefault(marketIndicatorCacheKey, indicator)
 		service.notify(observer.Event{E: observer.MarketIndicatorEvent})
 	} else {
@@ -94,10 +99,10 @@ func (service *Impl) fetchFearAndGreed() (*FearGreedIndex, error) {
 	return &result, nil
 }
 
-func (service *Impl) fetchDominance() (*BtcDominance, error) {
-	log.Info().Msg("Start fetching BTC dominance")
+func (service *Impl) fetchGlobalIndicator() (*GlobalIndicator, error) {
+	log.Info().Msg("Start fetching global indicator")
 
-	endpoint := fmt.Sprintf("%s/v0/widgets/btc-dominance-chart?period=24H", service.baseURL)
+	endpoint := fmt.Sprintf("%s/v0/global", service.baseURL)
 	resp, err := http.Get(endpoint)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch data: %w", err)
@@ -108,7 +113,7 @@ func (service *Impl) fetchDominance() (*BtcDominance, error) {
 		return nil, fmt.Errorf("API request failed with status: %d", resp.StatusCode)
 	}
 
-	var result BtcDominance
+	var result GlobalIndicator
 
 	err = json.NewDecoder(resp.Body).Decode(&result)
 	if err != nil {

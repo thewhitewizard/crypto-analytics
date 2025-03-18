@@ -28,7 +28,7 @@ func New() (*Impl, error) {
 		return nil, errDB
 	}
 
-	errMigration := db.GetDB().AutoMigrate(&entities.CommunityData{}, &entities.TelegramUser{}, &entities.Historical{}, &entities.TrendingCrypto{}, &entities.Tweet{})
+	errMigration := db.GetDB().AutoMigrate(&entities.FeedSource{}, &entities.CommunityData{}, &entities.TelegramUser{}, &entities.Historical{}, &entities.TrendingCrypto{}, &entities.Tweet{})
 	if errMigration != nil {
 		return nil, errMigration
 	}
@@ -50,6 +50,7 @@ func New() (*Impl, error) {
 	twitterRepo := twitterRepo.New(db)
 	telegramRepo := telegramRepo.New(db)
 	communityRepo := communityRepo.New(db)
+	//	feedRepo := feedsourcesRepo.New(db)
 
 	twitterService, errTwitter := twitter.New(scheduler, twitterRepo, constants.GetTwitterAccounts())
 	if errTwitter != nil {
@@ -69,9 +70,17 @@ func New() (*Impl, error) {
 	if errTg != nil {
 		return nil, errTg
 	}
+	/**
+	feedService, errFeeds := feeds.New(feedRepo, scheduler)
+	if errFeeds != nil {
+		return nil, errFeeds
+	}
 
+
+	feedService.RegisterObserver(telegramService)
+	feedService.FetchFeeds()
+	**/
 	coinmarketcapService.RegisterObserver(telegramService)
-
 	return &Impl{
 		scheduler:            scheduler,
 		probes:               probes,
@@ -79,7 +88,8 @@ func New() (*Impl, error) {
 		telegramService:      telegramService,
 		twitterService:       twitterService,
 		cryptorankService:    cryptorankService,
-		db:                   db,
+		//	feedService:          feedService,
+		db: db,
 	}, nil
 }
 
